@@ -219,6 +219,66 @@ Request body:
 }
 ```
 
+## Bookmarks
+
+Students can save opportunities they want to revisit later.
+
+### Save a bookmark
+
+`POST /api/bookmarks/`
+
+Headers:
+```http
+Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Request body:
+```json
+{
+  "opportunity_id": 12
+}
+```
+
+Response:
+```json
+{
+  "id": 1,
+  "user": "student1",
+  "opportunity": {
+    "id": 12,
+    "title": "Summer Data Science Internship",
+    "organization_name": "EdTech Co",
+    "description": "12-week remote internship focused on data analysis.",
+    "opportunity_type": "Internship",
+    "category": "Data Science",
+    "location": "Remote",
+    "external_url": "https://example.com/apply",
+    "application_deadline": "2026-06-30",
+    "is_active": true,
+    "posted_by": "company1",
+    "posted_by_id": 2,
+    "created_at": "2025-10-01T12:00:00Z",
+    "updated_at": "2025-10-01T12:00:00Z"
+  },
+  "created_at": "2025-10-01T12:10:00Z"
+}
+```
+
+### List bookmarks
+
+`GET /api/bookmarks/`
+
+Returns the bookmarks saved by the authenticated student.
+
+### Remove a bookmark
+
+`DELETE /api/bookmarks/{id}/`
+
+Headers:
+```http
+Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
 Important: the opportunity does not accept applications through this API. The `external_url` is the link students should follow to apply.
 
 ### Edit an opportunity
@@ -267,6 +327,9 @@ Protected endpoints (token required):
 - `POST /api/opportunities/`
 - `PUT/PATCH/DELETE /api/opportunities/{id}/`
 - `GET /api/opportunities/mine/`
+- `GET /api/bookmarks/`
+- `POST /api/bookmarks/`
+- `DELETE /api/bookmarks/{id}/`
 
 ## Simple JavaScript example
 
@@ -322,7 +385,70 @@ Always check HTTP status codes:
 
 ## Bookmarking
 
-This current API version does not include a bookmarking endpoint. If you want bookmarking later, we can add a dedicated endpoint for saving and listing favorites.
+Students can save opportunities to their personal bookmark list. Bookmarks are not applications — they are a way to keep track of interesting opportunities for later.
+
+### Save an opportunity
+
+`POST /api/bookmarks/`
+
+Headers:
+```http
+Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+Request body:
+```json
+{
+  "opportunity_id": 12
+}
+```
+
+Response example:
+```json
+{
+  "id": 1,
+  "user": "student1",
+  "opportunity": {
+    "id": 12,
+    "title": "Summer Data Science Internship",
+    "organization_name": "EdTech Co",
+    "description": "12-week remote internship focused on data analysis.",
+    "opportunity_type": "Internship",
+    "category": "Data Science",
+    "location": "Remote",
+    "external_url": "https://example.com/apply",
+    "application_deadline": "2026-06-30",
+    "is_active": true,
+    "posted_by": "company1",
+    "posted_by_id": 2,
+    "created_at": "2026-05-14T12:34:56Z",
+    "updated_at": "2026-05-14T12:34:56Z"
+  },
+  "created_at": "2026-05-14T12:40:00Z"
+}
+```
+
+### List saved bookmarks
+
+`GET /api/bookmarks/`
+
+Headers:
+```http
+Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+This returns the current student's saved opportunities.
+
+### Remove a saved bookmark
+
+`DELETE /api/bookmarks/{id}/`
+
+Headers:
+```http
+Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+This removes the bookmark from the student's saved list.
 
 ## Summary
 
@@ -333,4 +459,3 @@ The frontend should:
 4. use public endpoints for browsing opportunities and profiles
 5. use protected endpoints only after login
 
-If you need, I can also add a sample `fetch` library wrapper for your frontend team so they can call these endpoints more easily.

@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .views import (
+    BookmarkViewSet,
     CurrentUserView,
     LoginView,
     LogoutView,
@@ -13,6 +14,7 @@ from .views import (
 
 router = DefaultRouter()
 router.register(r'opportunities', OpportunityViewSet, basename='opportunity')
+router.register(r'bookmarks', BookmarkViewSet, basename='bookmark')
 
 urlpatterns = [
     path('auth/register/', RegisterView.as_view(), name='auth-register'),

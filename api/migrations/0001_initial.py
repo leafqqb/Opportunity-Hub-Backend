@@ -56,4 +56,17 @@ class Migration(migrations.Migration):
                 'ordering': ['-updated_at'],
             },
         ),
+        migrations.CreateModel(
+            name='Bookmark',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('created_at', models.DateTimeField(auto_now_add=True)),
+                ('opportunity', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='bookmarks', to='api.opportunity')),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='bookmarks', to=settings.AUTH_USER_MODEL)),
+            ],
+            options={
+                'ordering': ['-created_at'],
+                'unique_together': {('user', 'opportunity')},
+            },
+        ),
     ]

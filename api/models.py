@@ -69,3 +69,16 @@ class Opportunity(models.Model):
 
     def __str__(self):
         return f"{self.title} @ {self.organization_name}"
+
+
+class Bookmark(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookmarks')
+    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name='bookmarks')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        unique_together = [['user', 'opportunity']]
+
+    def __str__(self):
+        return f"{self.user.username} bookmarked {self.opportunity.title}"

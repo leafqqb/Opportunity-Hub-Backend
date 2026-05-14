@@ -1,8 +1,9 @@
 from django.contrib.auth import authenticate, get_user_model
 from rest_framework import serializers
 from rest_framework.authtoken.models import Token
+from rest_framework.validators import UniqueTogetherValidator
 
-from .models import Opportunity, Profile
+from .models import Bookmark, Opportunity, Profile
 
 User = get_user_model()
 
@@ -30,6 +31,27 @@ class OpportunitySerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['posted_by', 'posted_by_id', 'created_at', 'updated_at']
+
+
+class BookmarkSerializer(serializers.ModelSerializer):
+    user = serializers.ReadOnlyField(source='user.username')
+    opportunity = OpportunitySerializer(read_only=True)
+    opportunity_id = serializers.PrimaryKeyRelatedField(
+        queryset=Opportunity.objects.filter(is_active=True),
+        source='opportunity',
+        write_only=True,
+    )
+
+    class Meta:
+        model = Bookmark
+        fields = ['id', 'user', 'opportunity', 'opportunity_id', 'created_at']
+        read_only_fields = ['id', 'user', 'opportunity', 'created_at']
+
+    def validate(self, attrs):
+        request = self.context.get('request')
+        if request and hasattr(request, 'user') and request.user.is_authenticated:
+            attrs['user'] = request.user
+        return attrs
 
 
 class ProfileSerializer(serializers.ModelSerializer):

@@ -3,14 +3,16 @@ from django.db.models import Q
 from rest_framework import status, viewsets
 from rest_framework.authtoken.models import Token
 from rest_framework.decorators import action
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import RetrieveAPIView, RetrieveUpdateDestroyAPIView
 
-from .models import Opportunity, Profile
+from .models import Bookmark, Opportunity, Profile
 from .permissions import IsOwnerOrReadOnly
 from .serializers import (
+    BookmarkSerializer,
     LoginSerializer,
     OpportunitySerializer,
     ProfileSerializer,
@@ -133,3 +135,26 @@ class OpportunityViewSet(viewsets.ModelViewSet):
         queryset = Opportunity.objects.filter(posted_by=request.user)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
+
+
+class BookmarkViewSet(viewsets.ModelViewSet):
+    queryset = Bookmark.objects.select_related('opportunity', 'user')
+    serializer_class = BookmarkSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Bookmark.objects.filter(user=self.request.user).select_related('opportunity')
+
+    def perform_create(self, serializer):
+        if self.request.user.profile.role != Profile.STUDENT:
+            raise PermissionDenied('Only student users can save bookmarks.')
+        opportunity = serializer.validated_data.get('opportunity')
+        if Bookmark.objects.filter(user=self.request.user, opportunity=opportunity).exists():
+            raise ValidationError({'detail': 'This opportunity is already bookmarked.'})
+        serializer.save(user=self.request.user)
+
+    def destroy(self, request, *args, **kwargs):
+        bookmark = self.get_object()
+        if bookmark.user != request.user:
+            raise PermissionDenied('You may only remove your own bookmarks.')
+        return super().destroy(request, *args, **kwargs)
