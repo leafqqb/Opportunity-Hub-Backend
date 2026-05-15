@@ -45,14 +45,19 @@ class OpportunityViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['update', 'partial_update', 'destroy']:
-            return [IsOwnerOrReadOnly()]
+            return [IsAuthenticated(), IsOwnerOrReadOnly()]
         if self.action == 'create':
             return [IsAuthenticated()]
         return [AllowAny()]
 
+
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated], url_path='mine')
     def mine(self, request):
-        queryset = Opportunity.objects.filter(posted_by=request.user)
+        queryset = Opportunity.objects.filter(posted_by=request.user).order_by('-created_at')
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 

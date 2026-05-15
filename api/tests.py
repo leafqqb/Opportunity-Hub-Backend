@@ -68,18 +68,20 @@ class OpportunityTests(APITestCase):
 class BookmarkTests(APITestCase):
     def setUp(self):
         register_url = reverse('auth-register')
-        payload = {
-            'username': 'student1',
-            'email': 'student1@example.com',
-            'password': 'Pass12345!',
-            'role': 'student',
-            'headline': 'Computer science student',
-        }
-        response = self.client.post(register_url, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.token = response.data['token']
-        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token}')
 
+        # Create a company to own the opportunity
+        company_res = self.client.post(register_url, {
+            'username': 'company1',
+            'email': 'company1@example.com',
+            'password': 'Pass12345!',
+            'role': 'company',
+            'company_name': 'FutureTech',
+        }, format='json')
+        self.assertEqual(company_res.status_code, status.HTTP_201_CREATED)
+        company_token = company_res.data['token']
+
+        # Create opportunity as company
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {company_token}')
         opp_response = self.client.post(
             reverse('opportunity-list'),
             {
@@ -95,6 +97,18 @@ class BookmarkTests(APITestCase):
         )
         self.assertEqual(opp_response.status_code, status.HTTP_201_CREATED)
         self.opportunity_id = opp_response.data['id']
+
+        # Switch to student
+        student_res = self.client.post(register_url, {
+            'username': 'student1',
+            'email': 'student1@example.com',
+            'password': 'Pass12345!',
+            'role': 'student',
+            'headline': 'Computer science student',
+        }, format='json')
+        self.assertEqual(student_res.status_code, status.HTTP_201_CREATED)
+        self.token = student_res.data['token']
+        self.client.credentials(HTTP_AUTHORIZATION=f'Token {self.token}')
 
     def test_student_can_bookmark_opportunity(self):
         bookmark_url = reverse('bookmark-list')

@@ -37,7 +37,11 @@ class Opportunity(models.Model):
     application_deadline = models.DateField(null=True, blank=True)
 
     # Optional enrichment fields shown in the Figma detail page
-    is_paid = models.BooleanField(null=True, blank=True)   # True/False/None (not applicable)
+    is_paid = models.BooleanField(
+        null=True,
+        blank=True,
+        help_text="True=paid, False=unpaid, None=not applicable (e.g. competitions)"
+    )
     is_urgent = models.BooleanField(default=False)
     major = models.CharField(max_length=255, blank=True)   # target major(s)
     responsibilities = models.TextField(blank=True)

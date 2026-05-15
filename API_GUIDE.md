@@ -1,479 +1,760 @@
-# Opportunity Hub API Guide
+# Opportunity Hub — Frontend API Guide
 
-## Overview
+> **Base URL (local):** `http://localhost:8000/api/`  
+> **Auth scheme:** Token — send `Authorization: Token <your-token>` on every protected request.  
+> **Pagination:** List endpoints return `{ count, next, previous, results[] }`. Use `?limit=20&offset=0`.
 
-This API is built for the Opportunity Hub frontend. It allows users to:
-- register and log in securely
-- manage their profile
-- browse opportunities
-- create, update, and delete opportunities when authenticated
+---
 
-The API uses token authentication, so the frontend must send a valid token with requests that change data.
+## Table of Contents
 
-## Base URL
+1. [Authentication Flow](#1-authentication-flow)
+2. [Profile Endpoints](#2-profile-endpoints)
+3. [Opportunities](#3-opportunities)
+4. [Bookmarks](#4-bookmarks)
+5. [Field Reference](#5-field-reference)
+6. [Error Reference](#6-error-reference)
+7. [Full Frontend Workflow](#7-full-frontend-workflow)
+8. [Practical Code Snippets](#8-practical-code-snippets)
 
-If the app runs locally, the base API URL is:
+---
 
-`http://localhost:8000/api/`
+## 1. Authentication Flow
 
-Example full endpoint:
+### 1.1 Pick a role first
 
-`http://localhost:8000/api/auth/login/`
+Before registering, the user picks **Student** or **Organization** in your UI. This maps to the `role` field: `"student"` or `"company"`.
 
-## How authentication works
+---
 
-### 1. Register a new user
-When a new user signs up, the API creates a Django account and profile.
+### 1.2 Register
 
-Endpoint:
+`POST /api/auth/register/`  
+**Auth required:** No
 
-`POST /api/auth/register/`
-
-Request body:
+#### Student body
 ```json
 {
-  "username": "johndoe",
-  "email": "john@example.com",
+  "username": "ahmad99",
+  "email": "ahmad@example.com",
   "password": "StrongPass123!",
   "role": "student",
-  "headline": "Computer science student",
-  "bio": "Looking for internships and scholarships.",
-  "location": "Remote",
-  "university": "State University",
-  "graduation_year": 2025,
-  "skills": "Python,Data Analysis"
+  "headline": "CS student at KAU",
+  "bio": "Looking for internships in AI.",
+  "location": "Jeddah, Saudi Arabia",
+  "university": "King Abdulaziz University",
+  "graduation_year": 2026,
+  "major": "Computer Science",
+  "skills": "Python,Machine Learning,SQL"
 }
 ```
 
-Response:
+#### Organization body
 ```json
 {
-  "token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "username": "aramco_hr",
+  "email": "hr@aramco.com",
+  "password": "StrongPass123!",
+  "role": "company",
+  "company_name": "Saudi Aramco",
+  "industry": "Energy",
+  "bio": "One of the world's largest energy companies.",
+  "location": "Dhahran, Saudi Arabia",
+  "website": "https://www.aramco.com"
+}
+```
+
+> ⚠️ `company_name` is **required** when `role` is `"company"`. Registration will fail without it.
+
+#### Response `201 Created`
+```json
+{
+  "token": "9944b09199c62dcf37f44568109b6bc19df8f37a",
   "user": {
     "id": 1,
-    "username": "johndoe",
-    "email": "john@example.com",
+    "username": "ahmad99",
+    "email": "ahmad@example.com",
     "role": "student"
   }
 }
 ```
 
-The returned `token` is used for later requests.
+**Save the token immediately.** It's the user's session key.
 
-### 2. Login to get a token
+---
 
-Endpoint:
+### 1.3 Login
 
-`POST /api/auth/login/`
+`POST /api/auth/login/`  
+**Auth required:** No
 
-You can log in with either `username` or `email` plus `password`.
+Log in with **username** or **email** — either works.
 
-Request body example:
+```json
+{ "username": "ahmad99", "password": "StrongPass123!" }
+```
+```json
+{ "email": "ahmad@example.com", "password": "StrongPass123!" }
+```
+
+#### Response `200 OK` — same shape as register
 ```json
 {
-  "username": "johndoe",
-  "password": "StrongPass123!"
+  "token": "9944b09199c62dcf37f44568109b6bc19df8f37a",
+  "user": { "id": 1, "username": "ahmad99", "email": "ahmad@example.com", "role": "student" }
 }
 ```
 
-Or with email:
+---
+
+### 1.4 Get current user
+
+`GET /api/auth/me/`  
+**Auth required:** Yes
+
+Returns the full profile of whoever owns the token. Use this on page load to rehydrate session state.
+
+---
+
+### 1.5 Logout
+
+`POST /api/auth/logout/`  
+**Auth required:** Yes  
+**Body:** none
+
+Deletes the token server-side. After this, all requests using the old token return `401`. Clear the token from storage.
+
+#### Response `200 OK`
 ```json
-{
-  "email": "john@example.com",
-  "password": "StrongPass123!"
-}
+{ "detail": "Logged out successfully." }
 ```
 
-Response:
-```json
-{
-  "token": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "user": {
-    "id": 1,
-    "username": "johndoe",
-    "email": "john@example.com",
-    "role": "student"
-  }
-}
-```
+---
 
-### 3. Store the token in the frontend
+### 1.6 Storing the token
 
-After login or registration, store the token in a safe place on the client:
-- local storage (for simple apps)
-- or a secure cookie if you want more protection
-
-Example with JavaScript:
 ```js
-localStorage.setItem('opportunityHubToken', token)
+// After login or register:
+localStorage.setItem('ohToken', data.token)
+localStorage.setItem('ohUser', JSON.stringify(data.user))
+
+// On every protected request:
+const token = localStorage.getItem('ohToken')
+headers: { 'Authorization': `Token ${token}` }
+
+// On logout:
+localStorage.removeItem('ohToken')
+localStorage.removeItem('ohUser')
 ```
 
-### 4. Send the token with protected requests
+---
 
-For any request that creates, updates, or deletes data, include this header:
+## 2. Profile Endpoints
 
-`Authorization: Token <your-token-here>`
+### 2.1 View & edit your own profile
 
-Example:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+`GET /api/profiles/me/` — returns your full profile including email  
+`PATCH /api/profiles/me/` — update any editable fields  
+`DELETE /api/profiles/me/` — permanently delete account  
+**Auth required:** Yes for all three
 
-### How tokens work
-
-- The token is a secret string generated by the backend.
-- It identifies the user for protected requests.
-- If the user logs out, the token is invalidated.
-- The frontend must send the token on every protected request.
-
-## Getting the current user
-
-Endpoint:
-
-`GET /api/auth/me/`
-
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-This returns the profile of the currently logged-in user.
-
-## Profiles
-
-### Current user profile
-
-Use this to view and update the logged-in user's profile.
-
-- `GET /api/profiles/me/` — read own profile
-- `PATCH /api/profiles/me/` — update own profile
-- `DELETE /api/profiles/me/` — delete own account and profile
-
-Example update request:
+#### PATCH example (student)
 ```json
 {
-  "headline": "Computer Science Student",
-  "bio": "Open to remote internships.",
-  "location": "Lagos, Nigeria",
-  "skills": "Python,HTML,CSS"
+  "headline": "Final year CS student",
+  "bio": "Passionate about NLP and open-source.",
+  "location": "Riyadh, Saudi Arabia",
+  "university": "KFUPM",
+  "graduation_year": 2026,
+  "major": "Software Engineering",
+  "skills": "Python,Django,React"
 }
 ```
 
-### Public profile
-
-This is read-only for other users.
-
-`GET /api/profiles/{username}/`
-
-Example:
-
-`GET /api/profiles/johndoe/`
-
-## Opportunities
-
-### Browse opportunities
-
-`GET /api/opportunities/`
-
-This endpoint is public: anyone can view opportunities.
-
-The response is paginated, so the frontend should read `results` from the response body and can use `limit` / `offset` to page through results.
-
-Optional query parameters:
-- `search` — find opportunities by title, description, category, or organization
-- `category` — filter by category
-- `location` — filter by location
-- `type` — filter by opportunity type
-- `organization` — filter by organization name
-- `major` — filter by target major
-- `is_paid` — filter paid opportunities (`true` / `false`)
-- `is_urgent` — filter urgent opportunities (`true` / `false`)
-- `deadline_before` — filter opportunities with deadlines on or before a date
-- `deadline_after` — filter opportunities with deadlines on or after a date
-
-Example:
-
-`GET /api/opportunities/?search=data&location=remote&is_paid=true`
-
-### View a single opportunity
-
-`GET /api/opportunities/{id}/`
-
-Example:
-
-`GET /api/opportunities/12/`
-
-### Create an opportunity
-
-Only logged-in users can create opportunities.
-
-`POST /api/opportunities/`
-
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-Request body:
+#### PATCH example (company)
 ```json
 {
-  "title": "Summer Data Science Internship",
-  "organization_name": "EdTech Co",
-  "description": "12-week remote internship focused on data analysis.",
+  "headline": "Building Saudi Arabia's AI future",
+  "bio": "We hire top engineering talent.",
+  "company_name": "Saudi Aramco",
+  "industry": "Energy",
+  "location": "Dhahran, Saudi Arabia",
+  "website": "https://www.aramco.com"
+}
+```
+
+> ℹ️ `username`, `email`, and `role` are **read-only** — they cannot be changed after registration.
+
+---
+
+### 2.2 Public profile (read-only)
+
+`GET /api/profiles/{username}/`  
+**Auth required:** No
+
+Returns the public fields of any user. Email is **not** included.
+
+```
+GET /api/profiles/ahmad99/
+```
+
+---
+
+## 3. Opportunities
+
+### 3.1 Browse opportunities (public)
+
+`GET /api/opportunities/`  
+**Auth required:** No
+
+Returns a paginated list. Default page size is 20.
+
+#### All filter parameters
+
+| Param | Type | Example | Notes |
+|---|---|---|---|
+| `search` | string | `?search=data+science` | Searches title, description, category, org name |
+| `category` | string | `?category=engineering` | Partial match |
+| `location` | string | `?location=riyadh` | Partial match |
+| `type` | string | `?type=Internship` | Exact, case-insensitive |
+| `organization` | string | `?organization=aramco` | Partial match |
+| `major` | string | `?major=computer+science` | Partial match |
+| `is_paid` | boolean | `?is_paid=true` | `true` or `false` |
+| `is_urgent` | boolean | `?is_urgent=true` | `true` or `false` |
+| `deadline_before` | date | `?deadline_before=2026-08-01` | YYYY-MM-DD, inclusive |
+| `deadline_after` | date | `?deadline_after=2026-05-01` | YYYY-MM-DD, inclusive |
+| `limit` | int | `?limit=10` | Pagination |
+| `offset` | int | `?offset=20` | Pagination |
+
+#### Combine filters freely
+```
+GET /api/opportunities/?search=ai&location=riyadh&is_paid=true&type=Internship
+```
+
+#### Response shape (list)
+```json
+{
+  "count": 87,
+  "next": "http://localhost:8000/api/opportunities/?limit=20&offset=20",
+  "previous": null,
+  "results": [
+    {
+      "id": 12,
+      "title": "AI Research Internship",
+      "organization_name": "KACST",
+      "opportunity_type": "Internship",
+      "category": "Artificial Intelligence",
+      "location": "Riyadh, Saudi Arabia",
+      "application_deadline": "2026-08-15",
+      "is_paid": true,
+      "is_urgent": false,
+      "major": "Computer Science, Data Science",
+      "external_url": "https://kacst.gov.sa/apply",
+      "posted_by": "kacst_hr",
+      "status": "active",
+      "is_expired": false,
+      "created_at": "2026-05-01T09:00:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### 3.2 View a single opportunity
+
+`GET /api/opportunities/{id}/`  
+**Auth required:** No
+
+Returns the full detail object with `responsibilities`, `requirements`, and `benefits`.
+
+#### Response shape (detail)
+```json
+{
+  "id": 12,
+  "title": "AI Research Internship",
+  "organization_name": "KACST",
+  "description": "Join our AI lab for a 12-week research internship...",
   "opportunity_type": "Internship",
-  "category": "Data Science",
-  "location": "Remote",
-  "external_url": "https://example.com/apply",
-  "application_deadline": "2026-06-30"
+  "category": "Artificial Intelligence",
+  "location": "Riyadh, Saudi Arabia",
+  "external_url": "https://kacst.gov.sa/apply",
+  "application_deadline": "2026-08-15",
+  "is_paid": true,
+  "is_urgent": false,
+  "major": "Computer Science, Data Science",
+  "responsibilities": "Conduct literature reviews\nBuild ML pipelines\nPresent findings weekly",
+  "requirements": "GPA 3.5+\nFamiliarity with Python and PyTorch",
+  "benefits": "Stipend: SAR 3,000/month\nHousing allowance\nCertificate",
+  "is_active": true,
+  "posted_by": "kacst_hr",
+  "posted_by_id": 5,
+  "status": "active",
+  "is_expired": false,
+  "created_at": "2026-05-01T09:00:00Z",
+  "updated_at": "2026-05-01T09:00:00Z"
 }
 ```
 
-## Bookmarks
+> ℹ️ **`status`** values: `"active"`, `"expired"`, `"inactive"`. Use `is_expired` or `status` to show a badge on the detail page.
 
-Students can save opportunities they want to revisit later.
+> ℹ️ **Applying:** There are no in-app applications. The "Apply Now" button should open `external_url` in a new tab.
 
-### Save a bookmark
+---
 
-`POST /api/bookmarks/`
+### 3.3 Create an opportunity
 
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+`POST /api/opportunities/`  
+**Auth required:** Yes (any role)
 
-Request body:
+#### Required fields
 ```json
 {
-  "opportunity_id": 12
+  "title": "Summer UI/UX Internship",
+  "organization_name": "TechCo SA",
+  "description": "Join our design team for 10 weeks...",
+  "opportunity_type": "Internship",
+  "external_url": "https://techcosa.com/apply"
 }
 ```
 
-Response:
+#### All optional fields
 ```json
 {
-  "id": 1,
-  "user": "student1",
+  "category": "Design",
+  "location": "Riyadh, Saudi Arabia",
+  "application_deadline": "2026-07-31",
+  "is_paid": true,
+  "is_urgent": true,
+  "major": "Design, Computer Science",
+  "responsibilities": "Design wireframes\nConduct user testing",
+  "requirements": "Figma proficiency\nNo experience required",
+  "benefits": "Paid stipend\nMentorship\nCertificate"
+}
+```
+
+#### Valid `opportunity_type` values
+`"Internship"` · `"Scholarship"` · `"Competition"` · `"COOP"` · `"Bootcamp"` · `"Volunteering"` · `"Program"`
+
+#### Response `201 Created` — full detail object
+
+---
+
+### 3.4 Update an opportunity
+
+`PATCH /api/opportunities/{id}/` — partial update (recommended)  
+`PUT /api/opportunities/{id}/` — full replace  
+**Auth required:** Yes — **only the creator** can update
+
+```json
+{ "location": "Hybrid", "is_urgent": true }
+```
+
+#### Response `200 OK` — updated detail object
+
+---
+
+### 3.5 Delete an opportunity
+
+`DELETE /api/opportunities/{id}/`  
+**Auth required:** Yes — **only the creator** can delete
+
+#### Response `204 No Content`
+
+---
+
+### 3.6 My posted opportunities
+
+`GET /api/opportunities/mine/`  
+**Auth required:** Yes
+
+Returns all opportunities created by the logged-in user. **Not paginated** — returns a plain array.
+
+Use this to populate the organization's dashboard table.
+
+---
+
+## 4. Bookmarks
+
+> Only accounts with `role: "student"` can use bookmark endpoints. Company accounts will receive `403`.
+
+### 4.1 Save a bookmark
+
+`POST /api/bookmarks/`  
+**Auth required:** Yes (student only)
+
+```json
+{ "opportunity_id": 12 }
+```
+
+#### Response `201 Created`
+```json
+{
+  "id": 7,
+  "user": "ahmad99",
   "opportunity": {
     "id": 12,
-    "title": "Summer Data Science Internship",
-    "organization_name": "EdTech Co",
-    "description": "12-week remote internship focused on data analysis.",
+    "title": "AI Research Internship",
+    "organization_name": "KACST",
     "opportunity_type": "Internship",
-    "category": "Data Science",
-    "location": "Remote",
-    "external_url": "https://example.com/apply",
-    "application_deadline": "2026-06-30",
-    "is_active": true,
-    "posted_by": "company1",
-    "posted_by_id": 2,
-    "created_at": "2025-10-01T12:00:00Z",
-    "updated_at": "2025-10-01T12:00:00Z"
+    "category": "Artificial Intelligence",
+    "location": "Riyadh, Saudi Arabia",
+    "application_deadline": "2026-08-15",
+    "is_paid": true,
+    "is_urgent": false,
+    "major": "Computer Science, Data Science",
+    "external_url": "https://kacst.gov.sa/apply",
+    "posted_by": "kacst_hr",
+    "status": "active",
+    "is_expired": false,
+    "created_at": "2026-05-01T09:00:00Z"
   },
-  "created_at": "2025-10-01T12:10:00Z"
+  "created_at": "2026-05-15T14:00:00Z"
 }
 ```
 
-### List bookmarks
+> ⚠️ Bookmarking the same opportunity twice returns `400`:  
+> `{ "detail": "This opportunity is already bookmarked." }`
 
-`GET /api/bookmarks/`
+---
 
-Returns the bookmarked opportunities saved by the authenticated student.
+### 4.2 List bookmarks
 
-This endpoint is paginated, so the response includes a `results` array.
+`GET /api/bookmarks/`  
+**Auth required:** Yes (student only)
 
-This endpoint is paginated, so the response includes a `results` array.
+Returns the logged-in student's bookmarks. **Sorted by nearest deadline** — ready for the Deadline Tracker UI.
 
-### Remove a bookmark
+Paginated: `{ count, next, previous, results[] }`
 
-`DELETE /api/bookmarks/{id}/`
+---
 
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+### 4.3 Remove a bookmark
 
-Important: the opportunity does not accept applications through this API. The `external_url` is the link students should follow to apply.
+`DELETE /api/bookmarks/{id}/`  
+**Auth required:** Yes (student only)
 
-### Edit an opportunity
+`id` here is the **bookmark ID** (from the bookmark object), not the opportunity ID.
 
-Only the user who created the opportunity can change it.
+#### Response `204 No Content`
 
-`PUT /api/opportunities/{id}/` — replace the whole opportunity
+---
 
-`PATCH /api/opportunities/{id}/` — change only specific fields
+## 5. Field Reference
 
-Example patch:
+### Opportunity status logic
+
+| `status` value | Meaning |
+|---|---|
+| `"active"` | Live and accepting interest |
+| `"expired"` | Deadline has passed |
+| `"inactive"` | Hidden by admin |
+
+Use `status` or `is_expired: true` to show an "Expired" badge.
+
+---
+
+### User profile fields
+
+| Field | Student | Company | Notes |
+|---|---|---|---|
+| `username` | ✅ | ✅ | Read-only after register |
+| `email` | ✅ | ✅ | Read-only, only in own profile |
+| `role` | `"student"` | `"company"` | Read-only |
+| `headline` | ✅ | ✅ | Short tagline, max 140 chars |
+| `bio` | ✅ | ✅ | Free text |
+| `location` | ✅ | ✅ | |
+| `website` | ✅ | ✅ | URL |
+| `university` | ✅ | — | |
+| `graduation_year` | ✅ | — | Integer e.g. `2026` |
+| `major` | ✅ | — | |
+| `skills` | ✅ | — | Comma-separated string |
+| `company_name` | — | ✅ | Required at registration |
+| `industry` | — | ✅ | |
+
+---
+
+## 6. Error Reference
+
+### HTTP status codes
+
+| Code | Meaning | Common cause |
+|---|---|---|
+| `200` | OK | Successful GET, PATCH |
+| `201` | Created | Successful POST |
+| `204` | No Content | Successful DELETE |
+| `400` | Bad Request | Validation error, missing required field, duplicate bookmark |
+| `401` | Unauthorized | Missing or invalid token |
+| `403` | Forbidden | Authenticated but not allowed (wrong role, not owner) |
+| `404` | Not Found | Resource doesn't exist or was deleted |
+
+### Error body shapes
+
 ```json
-{
-  "location": "Hybrid"
-}
+// 401 — missing token
+{ "detail": "Authentication credentials were not provided." }
+
+// 403 — wrong role or not owner
+{ "detail": "Only student accounts can perform this action." }
+
+// 400 — validation
+{ "organization_name": ["This field is required."] }
+{ "email": ["A user with that email already exists."] }
+{ "detail": "This opportunity is already bookmarked." }
 ```
 
-### Delete an opportunity
+---
 
-Only the creator can delete it.
+## 7. Full Frontend Workflow
 
-`DELETE /api/opportunities/{id}/`
-
-### View your own posted opportunities
-
-`GET /api/opportunities/mine/`
-
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+### Student journey
+```
+Landing page
+  → Choose "Student" → Register (POST /auth/register/)
+  → Save token + user in localStorage
+  → Home: Browse opportunities (GET /opportunities/?...)
+  → Click card → Detail page (GET /opportunities/{id}/)
+  → "Apply Now" → opens external_url in new tab
+  → "Bookmark" → POST /bookmarks/ { opportunity_id }
+  → Bookmarks page → GET /bookmarks/ (sorted by deadline)
+  → Remove bookmark → DELETE /bookmarks/{bookmark_id}/
+  → Profile page → PATCH /profiles/me/
+  → Logout → POST /auth/logout/
 ```
 
-This returns only opportunities created by the current user.
+### Organization journey
+```
+Landing page
+  → Choose "Organization" → Register (POST /auth/register/)
+  → Save token + user in localStorage
+  → Dashboard → GET /opportunities/mine/
+  → "Post Opportunity" → POST /opportunities/
+  → Edit row → PATCH /opportunities/{id}/
+  → Delete row → DELETE /opportunities/{id}/
+  → Profile page → PATCH /profiles/me/
+  → Logout → POST /auth/logout/
+```
 
-## What is required and what is public?
+---
 
-Public endpoints (no token required):
-- `GET /api/opportunities/`
-- `GET /api/opportunities/{id}/`
-- `GET /api/profiles/{username}/`
+## 8. Practical Code Snippets
 
-Protected endpoints (token required):
-- `POST /api/auth/logout/`
-- `GET /api/auth/me/`
-- `GET/PATCH/DELETE /api/profiles/me/`
-- `POST /api/opportunities/`
-- `PUT/PATCH/DELETE /api/opportunities/{id}/`
-- `GET /api/opportunities/mine/`
-- `GET /api/bookmarks/`
-- `POST /api/bookmarks/`
-- `DELETE /api/bookmarks/{id}/`
-
-Special notes:
-- Only the user who created an opportunity may update or delete it.
-- Only students may create bookmarks.
-
-
-## Simple JavaScript example
+### API client helper
 
 ```js
-const token = localStorage.getItem('opportunityHubToken')
+const BASE = 'http://localhost:8000/api'
 
-const response = await fetch('http://localhost:8000/api/opportunities/', {
+function getToken() {
+  return localStorage.getItem('ohToken')
+}
+
+async function api(path, { method = 'GET', body } = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+  const token = getToken()
+  if (token) headers['Authorization'] = `Token ${token}`
+
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  })
+
+  if (res.status === 204) return null
+  const data = await res.json()
+  if (!res.ok) throw data   // throw the error object for the caller to handle
+  return data
+}
+```
+
+---
+
+### Register & login
+
+```js
+// Register
+const { token, user } = await api('/auth/register/', {
   method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-    'Authorization': `Token ${token}`,
-  },
-  body: JSON.stringify({
-    title: 'Remote Backend Internship',
-    organization_name: 'Startup X',
-    description: 'Build APIs for educational tools.',
+  body: { username: 'ahmad99', email: 'ahmad@example.com', password: 'Pass123!', role: 'student' }
+})
+localStorage.setItem('ohToken', token)
+localStorage.setItem('ohUser', JSON.stringify(user))
+
+// Login
+const { token, user } = await api('/auth/login/', {
+  method: 'POST',
+  body: { email: 'ahmad@example.com', password: 'Pass123!' }
+})
+localStorage.setItem('ohToken', token)
+
+// Logout
+await api('/auth/logout/', { method: 'POST' })
+localStorage.removeItem('ohToken')
+localStorage.removeItem('ohUser')
+```
+
+---
+
+### Browse & filter opportunities
+
+```js
+// Basic browse
+const { results, count, next } = await api('/opportunities/?limit=20&offset=0')
+
+// Filtered: paid internships in Riyadh matching "data"
+const { results } = await api(
+  '/opportunities/?search=data&type=Internship&location=riyadh&is_paid=true'
+)
+
+// Category tabs (All / Internships / Scholarships / ...)
+const params = type !== 'All' ? `?type=${type}` : ''
+const { results } = await api(`/opportunities/${params}`)
+```
+
+---
+
+### Opportunity detail page
+
+```js
+const opportunity = await api('/opportunities/12/')
+
+// Apply button
+window.open(opportunity.external_url, '_blank', 'noopener,noreferrer')
+
+// Expired badge
+if (opportunity.is_expired || opportunity.status === 'expired') {
+  // show red "Expired" tag
+}
+```
+
+---
+
+### Create & manage opportunities (org dashboard)
+
+```js
+// Fetch own opportunities for dashboard table
+const opportunities = await api('/opportunities/mine/')
+
+// Post new opportunity
+const newOpp = await api('/opportunities/', {
+  method: 'POST',
+  body: {
+    title: 'UI/UX Internship',
+    organization_name: 'TechCo SA',
+    description: 'Join our design team...',
     opportunity_type: 'Internship',
-    category: 'Software',
-    location: 'Remote',
-    external_url: 'https://startupx.example.com/apply',
+    category: 'Design',
+    location: 'Riyadh, Saudi Arabia',
+    external_url: 'https://techcosa.com/apply',
     application_deadline: '2026-08-01',
-  }),
+    is_paid: true,
+    is_urgent: false,
+  }
 })
 
-const data = await response.json()
-console.log(data)
+// Edit (partial)
+await api('/opportunities/12/', {
+  method: 'PATCH',
+  body: { location: 'Hybrid', is_urgent: true }
+})
+
+// Delete
+await api('/opportunities/12/', { method: 'DELETE' })
 ```
 
-## Error handling tips
+---
 
-If the frontend sends invalid data or misses the token, the API returns errors in JSON form:
+### Bookmarks & deadline tracker
 
-Example missing token response:
-```json
-{
-  "detail": "Authentication credentials were not provided."
+```js
+// Save a bookmark
+const bookmark = await api('/bookmarks/', {
+  method: 'POST',
+  body: { opportunity_id: 12 }
+})
+
+// List bookmarks (sorted by nearest deadline — use as-is for Deadline Tracker)
+const { results } = await api('/bookmarks/')
+
+// Remove a bookmark — use the bookmark's own id, not the opportunity id
+await api(`/bookmarks/${bookmark.id}/`, { method: 'DELETE' })
+
+// Deadline tracker display logic
+results.forEach(({ id, opportunity }) => {
+  const deadline = new Date(opportunity.application_deadline)
+  const today = new Date()
+  const daysLeft = Math.ceil((deadline - today) / (1000 * 60 * 60 * 24))
+
+  if (daysLeft < 0) {
+    // "Expired" — red bar
+  } else {
+    // `${daysLeft} days left` — green/yellow bar
+  }
+})
+```
+
+---
+
+### Error handling pattern
+
+```js
+try {
+  const data = await api('/opportunities/', { method: 'POST', body: payload })
+  // success
+} catch (err) {
+  // err is the parsed JSON error body from the API
+  if (err.detail) {
+    showToast(err.detail)                          // e.g. "Authentication credentials were not provided."
+  } else {
+    // field-level validation errors
+    Object.entries(err).forEach(([field, messages]) => {
+      setFieldError(field, messages[0])            // e.g. { organization_name: ["This field is required."] }
+    })
+  }
 }
 ```
 
-Example validation error response:
-```json
-{
-  "organization_name": ["This field is required."]
+---
+
+### Session restore on page load
+
+```js
+async function restoreSession() {
+  const token = localStorage.getItem('ohToken')
+  if (!token) return null
+
+  try {
+    const user = await api('/auth/me/')
+    return user
+  } catch {
+    // Token expired or invalid — clean up
+    localStorage.removeItem('ohToken')
+    localStorage.removeItem('ohUser')
+    return null
+  }
 }
 ```
 
-Always check HTTP status codes:
-- `200` / `201` — success
-- `400` — bad request / validation failed
-- `401` — not authenticated
-- `403` — authenticated but not allowed
-- `404` — not found
+---
 
-## Bookmarking
+## Quick Reference
 
-Students can save opportunities to their personal bookmark list. Bookmarks are not applications — they are a way to keep track of interesting opportunities for later.
-
-### Save an opportunity
-
-`POST /api/bookmarks/`
-
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
+PUBLIC (no token needed)
+  GET  /opportunities/             Browse all
+  GET  /opportunities/{id}/        Single opportunity
+  GET  /profiles/{username}/       Public profile
 
-Request body:
-```json
-{
-  "opportunity_id": 12
-}
+PROTECTED (token required)
+  POST   /auth/logout/
+  GET    /auth/me/
+  GET    /profiles/me/
+  PATCH  /profiles/me/
+  DELETE /profiles/me/
+  POST   /opportunities/           Create
+  PATCH  /opportunities/{id}/      Edit (owner only)
+  DELETE /opportunities/{id}/      Delete (owner only)
+  GET    /opportunities/mine/      My posted opportunities
+  GET    /bookmarks/               Student only
+  POST   /bookmarks/               Student only
+  DELETE /bookmarks/{id}/          Student only
 ```
-
-Response example:
-```json
-{
-  "id": 1,
-  "user": "student1",
-  "opportunity": {
-    "id": 12,
-    "title": "Summer Data Science Internship",
-    "organization_name": "EdTech Co",
-    "description": "12-week remote internship focused on data analysis.",
-    "opportunity_type": "Internship",
-    "category": "Data Science",
-    "location": "Remote",
-    "external_url": "https://example.com/apply",
-    "application_deadline": "2026-06-30",
-    "is_active": true,
-    "posted_by": "company1",
-    "posted_by_id": 2,
-    "created_at": "2026-05-14T12:34:56Z",
-    "updated_at": "2026-05-14T12:34:56Z"
-  },
-  "created_at": "2026-05-14T12:40:00Z"
-}
-```
-
-### List saved bookmarks
-
-`GET /api/bookmarks/`
-
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-This returns the current student's saved opportunities.
-
-### Remove a saved bookmark
-
-`DELETE /api/bookmarks/{id}/`
-
-Headers:
-```http
-Authorization: Token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
-This removes the bookmark from the student's saved list.
-
-## Summary
-
-The frontend should:
-1. register or login
-2. save the returned token
-3. include `Authorization: Token <token>` for protected requests
-4. use public endpoints for browsing opportunities and profiles
-5. use protected endpoints only after login
-
