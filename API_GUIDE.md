@@ -52,7 +52,8 @@ Response:
   "user": {
     "id": 1,
     "username": "johndoe",
-    "email": "john@example.com"
+    "email": "john@example.com",
+    "role": "student"
   }
 }
 ```
@@ -90,7 +91,8 @@ Response:
   "user": {
     "id": 1,
     "username": "johndoe",
-    "email": "john@example.com"
+    "email": "john@example.com",
+    "role": "student"
   }
 }
 ```
@@ -175,16 +177,23 @@ Example:
 
 This endpoint is public: anyone can view opportunities.
 
+The response is paginated, so the frontend should read `results` from the response body and can use `limit` / `offset` to page through results.
+
 Optional query parameters:
 - `search` — find opportunities by title, description, category, or organization
 - `category` — filter by category
 - `location` — filter by location
 - `type` — filter by opportunity type
 - `organization` — filter by organization name
+- `major` — filter by target major
+- `is_paid` — filter paid opportunities (`true` / `false`)
+- `is_urgent` — filter urgent opportunities (`true` / `false`)
+- `deadline_before` — filter opportunities with deadlines on or before a date
+- `deadline_after` — filter opportunities with deadlines on or after a date
 
 Example:
 
-`GET /api/opportunities/?search=data&location=remote`
+`GET /api/opportunities/?search=data&location=remote&is_paid=true`
 
 ### View a single opportunity
 
@@ -268,7 +277,11 @@ Response:
 
 `GET /api/bookmarks/`
 
-Returns the bookmarks saved by the authenticated student.
+Returns the bookmarked opportunities saved by the authenticated student.
+
+This endpoint is paginated, so the response includes a `results` array.
+
+This endpoint is paginated, so the response includes a `results` array.
 
 ### Remove a bookmark
 
@@ -330,6 +343,11 @@ Protected endpoints (token required):
 - `GET /api/bookmarks/`
 - `POST /api/bookmarks/`
 - `DELETE /api/bookmarks/{id}/`
+
+Special notes:
+- Only the user who created an opportunity may update or delete it.
+- Only students may create bookmarks.
+
 
 ## Simple JavaScript example
 

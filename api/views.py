@@ -1,119 +1,39 @@
-from django.contrib.auth import logout
 from django.db.models import Q
-from rest_framework import status, viewsets
-from rest_framework.authtoken.models import Token
+from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
-from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.views import APIView
-from rest_framework.generics import RetrieveAPIView, RetrieveUpdateDestroyAPIView
+from django_filters.rest_framework import DjangoFilterBackend
 
-from .models import Bookmark, Opportunity, Profile
-from .permissions import IsOwnerOrReadOnly
+from .filters import OpportunityFilter
+from .models import Bookmark, Opportunity
+from .permissions import IsCompanyOnly, IsOwnerOrReadOnly, IsStudentOnly
 from .serializers import (
     BookmarkSerializer,
-    LoginSerializer,
+    OpportunityListSerializer,
     OpportunitySerializer,
-    ProfileSerializer,
-    RegisterSerializer,
-    UserSerializer,
 )
-
-
-class RegisterView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        token = Token.objects.get(user=user)
-        return Response({
-            'token': token.key,
-            'user': UserSerializer(user).data,
-        }, status=status.HTTP_201_CREATED)
-
-
-class LoginView(APIView):
-    permission_classes = [AllowAny]
-
-    def post(self, request):
-        serializer = LoginSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        token, _ = Token.objects.get_or_create(user=user)
-        return Response({
-            'token': token.key,
-            'user': UserSerializer(user).data,
-        })
-
-
-class LogoutView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        if request.auth:
-            request.auth.delete()
-        logout(request)
-        return Response({'detail': 'Logged out successfully.'}, status=status.HTTP_200_OK)
-
-
-class CurrentUserView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        profile = request.user.profile
-        serializer = ProfileSerializer(profile)
-        return Response(serializer.data)
-
-
-class ProfileDetailView(RetrieveUpdateDestroyAPIView):
-    serializer_class = ProfileSerializer
-    permission_classes = [IsAuthenticated, IsOwnerOrReadOnly]
-
-    def get_object(self):
-        return self.request.user.profile
-
-    def delete(self, request, *args, **kwargs):
-        user = request.user
-        logout(request)
-        user.delete()
-        return Response({'detail': 'Account and profile deleted.'}, status=status.HTTP_204_NO_CONTENT)
-
-
-class ProfilePublicView(RetrieveAPIView):
-    queryset = Profile.objects.select_related('user')
-    serializer_class = ProfileSerializer
-    lookup_field = 'user__username'
-    lookup_url_kwarg = 'username'
-    permission_classes = [AllowAny]
 
 
 class OpportunityViewSet(viewsets.ModelViewSet):
     queryset = Opportunity.objects.filter(is_active=True).select_related('posted_by')
     serializer_class = OpportunitySerializer
-    permission_classes = [IsAuthenticatedOrReadOnly, IsOwnerOrReadOnly]
+    permission_classes = [AllowAny]
+    filter_backends = [DjangoFilterBackend]
+    filterset_class = OpportunityFilter
+
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return OpportunityListSerializer
+        return OpportunitySerializer
 
     def perform_create(self, serializer):
         serializer.save(posted_by=self.request.user)
 
     def get_queryset(self):
         queryset = Opportunity.objects.filter(is_active=True).select_related('posted_by')
-        category = self.request.query_params.get('category')
-        location = self.request.query_params.get('location')
-        opportunity_type = self.request.query_params.get('type')
-        organization = self.request.query_params.get('organization')
         search = self.request.query_params.get('search')
-
-        if category:
-            queryset = queryset.filter(category__icontains=category)
-        if location:
-            queryset = queryset.filter(location__icontains=location)
-        if opportunity_type:
-            queryset = queryset.filter(opportunity_type__iexact=opportunity_type)
-        if organization:
-            queryset = queryset.filter(organization_name__icontains=organization)
         if search:
             queryset = queryset.filter(
                 Q(title__icontains=search)
@@ -125,8 +45,8 @@ class OpportunityViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ['update', 'partial_update', 'destroy']:
-            return [IsAuthenticated(), IsOwnerOrReadOnly()]
-        if self.action in ['create']:
+            return [IsOwnerOrReadOnly()]
+        if self.action == 'create':
             return [IsAuthenticated()]
         return [AllowAny()]
 
@@ -140,14 +60,12 @@ class OpportunityViewSet(viewsets.ModelViewSet):
 class BookmarkViewSet(viewsets.ModelViewSet):
     queryset = Bookmark.objects.select_related('opportunity', 'user')
     serializer_class = BookmarkSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsStudentOnly]
 
     def get_queryset(self):
         return Bookmark.objects.filter(user=self.request.user).select_related('opportunity')
 
     def perform_create(self, serializer):
-        if self.request.user.profile.role != Profile.STUDENT:
-            raise PermissionDenied('Only student users can save bookmarks.')
         opportunity = serializer.validated_data.get('opportunity')
         if Bookmark.objects.filter(user=self.request.user, opportunity=opportunity).exists():
             raise ValidationError({'detail': 'This opportunity is already bookmarked.'})
