@@ -25,3 +25,9 @@ venv/
 # System files
 .DS_Store
 Thumbs.db
+
+# Ignore deployment guide if the file is local only
+DEPLOYMENT.md
+
+#Extra
+DEPLOYMENT.md
