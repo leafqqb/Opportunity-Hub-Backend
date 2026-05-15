@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.db import models
+from datetime import date
 
 
 class Profile(models.Model):
@@ -33,22 +34,20 @@ class Profile(models.Model):
 class Opportunity(models.Model):
     INTERNSHIP = 'Internship'
     SCHOLARSHIP = 'Scholarship'
-    FELLOWSHIP = 'Fellowship'
-    JOB = 'Job'
-    COURSE = 'Course'
-    EVENT = 'Event'
-    GRANT = 'Grant'
-    OTHER = 'Other'
+    COMPETITION = 'Competition'
+    COOP = 'Coop'
+    BOOTCAMP = 'Bootcamp'
+    VOLUNTEERING = 'Volunteering'
+    PROGRAM = 'Program'
 
     OPPORTUNITY_TYPE_CHOICES = [
-        (INTERNSHIP, 'Internship'),
-        (SCHOLARSHIP, 'Scholarship'),
-        (FELLOWSHIP, 'Fellowship'),
-        (JOB, 'Job'),
-        (COURSE, 'Course'),
-        (EVENT, 'Event'),
-        (GRANT, 'Grant'),
-        (OTHER, 'Other'),
+        ('internship', 'Internship'),
+        ('scholarship', 'Scholarship'),
+        ('competition', 'Competition'),
+        ('coop', 'COOP'),
+        ('bootcamp', 'Bootcamp'),
+        ('volunteering', 'Volunteering'),
+        ('program', 'Program'),
     ]
 
     title = models.CharField(max_length=255)
@@ -59,25 +58,52 @@ class Opportunity(models.Model):
     location = models.CharField(max_length=120, blank=True)
     external_url = models.URLField()
     application_deadline = models.DateField(null=True, blank=True)
-    posted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='opportunities')
-    is_active = models.BooleanField(default=True)
+    posted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='opportunities'
+    )
+    is_paid = models.BooleanField(null=True, blank=True)  # True = paid, False = unpaid, None = not applicable
+    is_urgent = models.BooleanField(default=False)
+    major = models.CharField(max_length=255, blank=True)
+    views_count = models.PositiveIntegerField(default=0)
+    banner_image = models.URLField(blank=True)
+    responsibilities = models.TextField(blank=True)
+    benefits = models.TextField(blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
 
+    @property
+    def status(self):
+        if self.application_deadline and self.application_deadline < date.today():
+            return 'expired'
+        return 'active'
+
     def __str__(self):
         return f"{self.title} @ {self.organization_name}"
 
 
 class Bookmark(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='bookmarks')
-    opportunity = models.ForeignKey(Opportunity, on_delete=models.CASCADE, related_name='bookmarks')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='bookmarks'
+    )
+    opportunity = models.ForeignKey(
+        Opportunity,
+        on_delete=models.CASCADE,
+        related_name='bookmarks'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['-created_at']
+        ordering = ['opportunity__application_deadline']
         unique_together = [['user', 'opportunity']]
 
     def __str__(self):
