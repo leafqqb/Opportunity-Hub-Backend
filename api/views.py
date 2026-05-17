@@ -47,7 +47,7 @@ class OpportunityViewSet(viewsets.ModelViewSet):
         if self.action in ['update', 'partial_update', 'destroy']:
             return [IsAuthenticated(), IsOwnerOrReadOnly()]
         if self.action == 'create':
-            return [IsAuthenticated()]
+            return [IsCompanyOnly()]
         return [AllowAny()]
 
 
